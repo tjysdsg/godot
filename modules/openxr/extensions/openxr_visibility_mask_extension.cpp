@@ -31,10 +31,11 @@
 #include "openxr_visibility_mask_extension.h"
 
 #include "../openxr_api.h"
+
 #include "core/string/print_string.h"
 #include "core/variant/array.h"
 #include "core/variant/variant.h"
-#include "servers/rendering_server.h"
+#include "servers/rendering/rendering_server.h"
 
 static const char *VISIBILITY_MASK_SHADER_CODE =
 		"shader_type spatial;\n"
@@ -69,7 +70,7 @@ OpenXRVisibilityMaskExtension::~OpenXRVisibilityMaskExtension() {
 	singleton = nullptr;
 }
 
-HashMap<String, bool *> OpenXRVisibilityMaskExtension::get_requested_extensions() {
+HashMap<String, bool *> OpenXRVisibilityMaskExtension::get_requested_extensions(XrVersion p_version) {
 	HashMap<String, bool *> request_extensions;
 
 	request_extensions[XR_KHR_VISIBILITY_MASK_EXTENSION_NAME] = &available;
@@ -117,19 +118,19 @@ void OpenXRVisibilityMaskExtension::on_session_destroyed() {
 
 	// Free our mesh.
 	if (mesh.is_valid()) {
-		rendering_server->free(mesh);
+		rendering_server->free_rid(mesh);
 		mesh = RID();
 	}
 
 	// Free our material.
 	if (material.is_valid()) {
-		rendering_server->free(material);
+		rendering_server->free_rid(material);
 		material = RID();
 	}
 
 	// Free our shader.
 	if (shader.is_valid()) {
-		rendering_server->free(shader);
+		rendering_server->free_rid(shader);
 		shader = RID();
 	}
 
@@ -237,7 +238,7 @@ void OpenXRVisibilityMaskExtension::_update_mesh() {
 		if (vertice_count == 0 || index_count == 0) {
 			// Free our mesh if we have one.
 			if (mesh.is_valid()) {
-				rendering_server->free(mesh);
+				rendering_server->free_rid(mesh);
 				mesh = RID();
 			}
 
@@ -277,12 +278,12 @@ void OpenXRVisibilityMaskExtension::_update_mesh() {
 
 		// Update our mesh.
 		Array arr;
-		arr.resize(RS::ARRAY_MAX);
-		arr[RS::ARRAY_VERTEX] = vertices;
-		arr[RS::ARRAY_INDEX] = indices;
+		arr.resize(RSE::ARRAY_MAX);
+		arr[RSE::ARRAY_VERTEX] = vertices;
+		arr[RSE::ARRAY_INDEX] = indices;
 
 		rendering_server->mesh_clear(mesh);
-		rendering_server->mesh_add_surface_from_arrays(mesh, RS::PRIMITIVE_TRIANGLES, arr);
+		rendering_server->mesh_add_surface_from_arrays(mesh, RSE::PRIMITIVE_TRIANGLES, arr);
 		rendering_server->mesh_surface_set_material(mesh, 0, material);
 
 		// Set no longer dirty.

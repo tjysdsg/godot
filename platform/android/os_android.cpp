@@ -32,24 +32,33 @@
 
 #include "dir_access_jandroid.h"
 #include "display_server_android.h"
-#include "file_access_android.h"
 #include "file_access_filesystem_jandroid.h"
 #include "java_godot_io_wrapper.h"
 #include "java_godot_wrapper.h"
 #include "net_socket_android.h"
 
-#include "core/config/project_settings.h"
+#ifndef TOOLS_ENABLED
+#include "file_access_android.h"
+#endif
+
+#include "core/config/engine.h"
 #include "core/extension/gdextension_manager.h"
+#include "core/input/input.h"
 #include "core/io/xml_parser.h"
+#include "core/os/main_loop.h"
+#include "core/os/os.h"
+#include "core/profiling/profiling.h"
 #include "drivers/unix/dir_access_unix.h"
 #include "drivers/unix/file_access_unix.h"
+#include "main/main.h"
+#include "scene/main/scene_tree.h"
+#include "servers/rendering/rendering_server.h"
+
 #ifdef TOOLS_ENABLED
+#include "core/object/callable_mp.h"
 #include "editor/editor_node.h"
 #include "editor/run/game_view_plugin.h"
 #endif
-#include "main/main.h"
-#include "scene/main/scene_tree.h"
-#include "servers/rendering_server.h"
 
 #include <dlfcn.h>
 #include <sys/system_properties.h>
@@ -100,25 +109,27 @@ void OS_Android::initialize_core() {
 
 #ifdef TOOLS_ENABLED
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
-#else
+#else // TOOLS_ENABLED
+	FileAccess::make_default<FileAccessAndroid>(FileAccess::ACCESS_RESOURCES);
+#if defined(OVERRIDE_PATH_ENABLED)
 	if (use_apk_expansion) {
 		FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
-	} else {
-		FileAccess::make_default<FileAccessAndroid>(FileAccess::ACCESS_RESOURCES);
 	}
-#endif
+#endif // defined(OVERRIDE_PATH_ENABLED)
+#endif // TOOLS_ENABLED
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_USERDATA);
 	FileAccess::make_default<FileAccessFilesystemJAndroid>(FileAccess::ACCESS_FILESYSTEM);
 
 #ifdef TOOLS_ENABLED
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_RESOURCES);
-#else
+#else // TOOLS_ENABLED
+	DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_RESOURCES);
+#if defined(OVERRIDE_PATH_ENABLED)
 	if (use_apk_expansion) {
 		DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_RESOURCES);
-	} else {
-		DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_RESOURCES);
 	}
-#endif
+#endif // defined(OVERRIDE_PATH_ENABLED)
+#endif // TOOLS_ENABLED
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_USERDATA);
 	DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_FILESYSTEM);
 
@@ -358,11 +369,17 @@ void OS_Android::main_loop_begin() {
 		if (game_view_plugin != nullptr) {
 			game_view_plugin->connect("main_screen_changed", callable_mp_static(&OS_Android::_on_main_screen_changed));
 		}
+
+		if (EditorNode::get_singleton() != nullptr) {
+			EditorNode::get_singleton()->connect("distraction_free_mode_changed", callable_mp_static(&OS_Android::_on_distraction_free_mode_changed));
+		}
 	}
 #endif
 }
 
 bool OS_Android::main_loop_iterate(bool *r_should_swap_buffers) {
+	GodotProfileFrameMark;
+	GodotProfileZone("OS_Android::main_loop_iterate");
 	if (!main_loop) {
 		return false;
 	}
@@ -388,6 +405,10 @@ void OS_Android::main_loop_end() {
 		if (game_view_plugin != nullptr) {
 			game_view_plugin->disconnect("main_screen_changed", callable_mp_static(&OS_Android::_on_main_screen_changed));
 		}
+
+		if (EditorNode::get_singleton() != nullptr) {
+			EditorNode::get_singleton()->disconnect("distraction_free_mode_changed", callable_mp_static(&OS_Android::_on_distraction_free_mode_changed));
+		}
 	}
 #endif
 
@@ -406,18 +427,26 @@ void OS_Android::_on_main_screen_changed(const String &p_screen_name) {
 		OS_Android::get_singleton()->get_godot_java()->on_editor_workspace_selected(p_screen_name);
 	}
 }
+
+void OS_Android::_on_distraction_free_mode_changed(bool p_enable) {
+	if (OS_Android::get_singleton() != nullptr && OS_Android::get_singleton()->get_godot_java() != nullptr) {
+		OS_Android::get_singleton()->get_godot_java()->on_distraction_free_mode_changed(p_enable);
+	}
+}
 #endif
 
 void OS_Android::main_loop_focusout() {
-	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_OUT);
+	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServerEnums::WINDOW_EVENT_FOCUS_OUT);
 	if (OS::get_singleton()->get_main_loop()) {
 		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_OUT);
 	}
-	audio_driver_android.set_pause(true);
+
+	// Only pause when we are not in PiP mode.
+	audio_driver_android.set_pause(!DisplayServerAndroid::get_singleton()->is_in_pip_mode());
 }
 
 void OS_Android::main_loop_focusin() {
-	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_IN);
+	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServerEnums::WINDOW_EVENT_FOCUS_IN);
 	if (OS::get_singleton()->get_main_loop()) {
 		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_IN);
 	}
@@ -610,7 +639,7 @@ Vector<String> OS_Android::get_system_font_path_for_text(const String &p_font_na
 		font_name = font_aliases[font_name];
 	}
 	String root = String(getenv("ANDROID_ROOT")).path_join("fonts");
-	String lang_prefix = p_locale.split("_")[0];
+	String lang_prefix = p_locale.get_slicec('_', 0);
 	Vector<String> ret;
 	int best_score = 0;
 	for (const List<FontInfo>::Element *E = fonts.front(); E; E = E->next()) {
@@ -874,7 +903,7 @@ bool OS_Android::_check_internal_feature_support(const String &p_feature) {
 	}
 #endif
 
-	if (godot_java->has_feature(p_feature)) {
+	if (godot_java->check_internal_feature_support(p_feature)) {
 		return true;
 	}
 

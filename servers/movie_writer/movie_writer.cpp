@@ -29,13 +29,17 @@
 /**************************************************************************/
 
 #include "movie_writer.h"
+
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/object/class_db.h"
 #include "core/os/time.h"
+#include "core/templates/rb_set.h"
 #include "scene/main/window.h"
 #include "servers/audio/audio_driver_dummy.h"
-#include "servers/display_server.h"
-#include "servers/rendering_server.h"
+#include "servers/display/display_server_enums.h"
+#include "servers/rendering/rendering_server.h"
 
 MovieWriter *MovieWriter::writers[MovieWriter::MAX_WRITERS];
 uint32_t MovieWriter::writer_count = 0;
@@ -103,7 +107,7 @@ void MovieWriter::begin(const Size2i &p_movie_size, uint32_t p_fps, const String
 
 	// Check for available disk space and warn the user if needed.
 	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	String path = p_base_path.get_basename();
+	String path = p_base_path.get_base_dir();
 	if (path.is_relative_path()) {
 		path = "res://" + path;
 	}
@@ -138,6 +142,7 @@ void MovieWriter::_bind_methods() {
 	GDVIRTUAL_BIND(_get_audio_speaker_mode)
 
 	GDVIRTUAL_BIND(_handles_file, "path")
+	GDVIRTUAL_BIND(_get_supported_extensions)
 
 	GDVIRTUAL_BIND(_write_begin, "movie_size", "fps", "base_path")
 	GDVIRTUAL_BIND(_write_frame, "frame_image", "audio_frame_block")
@@ -146,6 +151,7 @@ void MovieWriter::_bind_methods() {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/mix_rate", PROPERTY_HINT_RANGE, "8000,192000,1,suffix:Hz"), 48000);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/speaker_mode", PROPERTY_HINT_ENUM, "Stereo,3.1,5.1,7.1"), 0);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "editor/movie_writer/video_quality", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), 0.75);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/audio_bit_depth", PROPERTY_HINT_ENUM, "16:16,32:32"), 16);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "editor/movie_writer/ogv/audio_quality", PROPERTY_HINT_RANGE, "-0.1,1.0,0.01"), 0.5);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/ogv/encoding_speed", PROPERTY_HINT_ENUM, "Fastest (Lowest Efficiency):4,Fast (Low Efficiency):3,Slow (High Efficiency):2,Slowest (Highest Efficiency):1"), 4);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "editor/movie_writer/ogv/keyframe_interval", PROPERTY_HINT_RANGE, "1,1024,1"), 64);
@@ -186,12 +192,12 @@ void MovieWriter::add_frame() {
 			String::num(movie_time_seconds % 60, 0).pad_zeros(2),
 			String::num(frame_remainder, 0).pad_zeros(2));
 
-	Window *main_window = Window::get_from_id(DisplayServer::MAIN_WINDOW_ID);
+	Window *main_window = Window::get_from_id(DisplayServerEnums::MAIN_WINDOW_ID);
 	if (main_window) {
 		main_window->set_title(vformat("MovieWriter: Frame %d (time: %s) - %s", Engine::get_singleton()->get_frames_drawn(), movie_time, project_name));
 	}
 
-	RID main_vp_rid = RenderingServer::get_singleton()->viewport_find_from_screen_attachment(DisplayServer::MAIN_WINDOW_ID);
+	RID main_vp_rid = RenderingServer::get_singleton()->viewport_find_from_screen_attachment(DisplayServerEnums::MAIN_WINDOW_ID);
 	RID main_vp_texture = RenderingServer::get_singleton()->viewport_get_texture(main_vp_rid);
 	Ref<Image> vp_tex = RenderingServer::get_singleton()->texture_2d_get(main_vp_texture);
 

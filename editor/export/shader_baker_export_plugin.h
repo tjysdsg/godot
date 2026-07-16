@@ -30,9 +30,14 @@
 
 #pragma once
 
+#include "core/object/object.h"
+#include "core/object/worker_thread_pool.h"
+#include "core/os/condition_variable.h"
+#include "core/templates/rb_set.h"
 #include "editor/export/editor_export_plugin.h"
-#include "servers/rendering/renderer_rd/shader_rd.h"
-#include "servers/rendering/rendering_shader_container.h"
+
+class ShaderRD;
+class RenderingShaderContainerFormat;
 
 class ShaderBakerExportPluginPlatform : public RefCounted {
 	GDCLASS(ShaderBakerExportPluginPlatform, RefCounted);
@@ -44,11 +49,14 @@ public:
 };
 
 class ShaderBakerExportPlugin : public EditorExportPlugin {
+	GDSOFTCLASS(ShaderBakerExportPlugin, EditorExportPlugin);
+
 protected:
 	struct WorkItem {
 		String cache_path;
 		String shader_name;
 		Vector<String> stage_sources;
+		Vector<uint64_t> dynamic_buffers;
 		int64_t variant = 0;
 	};
 
