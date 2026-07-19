@@ -1,0 +1,6 @@
+[submodule "modules/voxel"]
+	path = modules/voxel
+	url = git@github.com:Zylann/godot_voxel.git
+[submodule "ProjectV"]
+	path = ProjectV
+	url = git@github.com:tjysdsg/ProjectV.git
