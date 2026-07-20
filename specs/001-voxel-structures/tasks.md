@@ -97,15 +97,32 @@
 
 ---
 
-## Phase 7: Polish and cross-cutting validation
+## Phase 7: Multi-chunk structures
+
+**Goal**: Replace the single structure-wide voxel buffer and flat payload with chunked structure data while preserving one public object, GridMap workflow, and save record.
+
+**Independent Test**: Create a structure spanning at least four chunks, edit cells on both sides of a chunk boundary, verify no interior faces or collision gaps, then save and load it as one object.
+
+- [ ] T028 [US1] Add chunk-coordinate conversion, sparse non-empty chunk ownership, and public-coordinate access in `ProjectV/Scripts/voxel_structure.gd` and `ProjectV/Scripts/voxel_structure_chunk.gd`.
+- [ ] T029 [US1] Build padded per-chunk meshing input from neighboring chunks and refresh only edited chunks plus affected face neighbors in `ProjectV/Scripts/voxel_structure.gd`.
+- [ ] T030 [US1] Replace per-voxel collision generation with merged solid-box collision per chunk under the root rigid body in `ProjectV/Scripts/voxel_structure.gd`.
+- [ ] T031 [US2] Update complete-layout replacement and GridMap session commits to diff chunk data and refresh only changed chunk representations in `ProjectV/Scripts/voxel_structure.gd` and `ProjectV/Scripts/voxel_structure_gridmap_sync.gd`.
+- [ ] T032 [US3] Replace the flat structure payload with chunk coordinates, extents, and type payloads in `ProjectV/Resources/structure_save_record.gd`, `ProjectV/Scripts/voxel_structure.gd`, and `ProjectV/Scripts/structure_save_service.gd`.
+- [ ] T033 [US3] Add multi-chunk edit, mesh/collision-boundary, and save/load validation to `ProjectV/Tests/voxel_structure_validation.gd` and run scenario 5 in `specs/001-voxel-structures/quickstart.md`.
+
+**Checkpoint**: A large structure spans chunks without exposing chunk boundaries to gameplay, GridMap authoring, physics, or persistence.
+
+---
+
+## Phase 8: Polish and cross-cutting validation
 
 **Purpose**: Confirm the replacement is clean, bounded, and maintainable.
 
-- [X] T028 Review `ProjectV/addons/voxel_structure_editor/` and `ProjectV/project.godot` to confirm no old custom paint UX, panel, gizmo, block-selection handle, or stale resource reference remains.
-- [X] T029 [P] Update `ProjectV/technical-resources.md` and `AGENTS.md` with the editor-only GridMap companion architecture and the rule that it is derived rather than runtime data.
-- [X] T030 Run `git diff --check` for `ProjectV/` and `specs/001-voxel-structures/` and resolve whitespace or serialization issues.
-- [X] T031 Run the headless editor smoke check from `specs/001-voxel-structures/quickstart.md` and fix parse/load errors in touched ProjectV files.
-- [X] T032 Perform every applicable quickstart scenario in `specs/001-voxel-structures/quickstart.md` and record outcomes in the implementation handoff.
+- [X] T034 Review `ProjectV/addons/voxel_structure_editor/` and `ProjectV/project.godot` to confirm no old custom paint UX, panel, gizmo, block-selection handle, or stale resource reference remains.
+- [X] T035 [P] Update `ProjectV/technical-resources.md` and `AGENTS.md` with the editor-only GridMap companion architecture and the rule that it is derived rather than runtime data.
+- [ ] T036 Run `git diff --check` for `ProjectV/` and `specs/001-voxel-structures/` and resolve whitespace or serialization issues.
+- [ ] T037 Run the headless editor smoke check from `specs/001-voxel-structures/quickstart.md` and fix parse/load errors in touched ProjectV files.
+- [ ] T038 Perform every applicable quickstart scenario in `specs/001-voxel-structures/quickstart.md` and record outcomes in the implementation handoff.
 
 ---
 
@@ -117,6 +134,7 @@
 - US2 (Phase 4) depends on US1's stable batch-layout API.
 - US3 (Phase 5) depends on US2 because saves must flush a session safely.
 - US4 (Phase 6) depends on US3's final save contract.
+- Multi-chunk work (Phase 7) depends on the existing structure, GridMap, and save contracts, and updates their implementations without changing their public ownership rules.
 - Polish follows all desired stories.
 
 ## Parallel opportunities
@@ -125,13 +143,16 @@
 - T005 and T007 can proceed in parallel after agreeing on the public layout contract.
 - T013 and T015 can proceed in parallel after T007 establishes the synchronizer interface.
 - T021 and T023 can proceed in parallel after US2 completes.
-- T029 can proceed independently once the architecture is stable.
+- T035 can proceed independently once the architecture is stable.
+- T028 and T032 can proceed in parallel after agreeing on the chunk payload contract.
+- T029 and T030 can proceed in parallel after T028 establishes chunk access.
 
 ## Implementation strategy
 
 1. Remove the rejected interaction system completely.
 2. Establish and validate `VoxelStructure` as the sole mutable/persisted layout authority.
 3. Deliver the GridMap authoring session as the next increment, with no manual conversion UI.
-4. Verify persistence and machines only after editor sessions flush correctly.
+4. Replace the structure-wide buffer with chunk-local data, meshing, collision, and persistence while preserving the completed editor workflow.
+5. Verify persistence and machines after chunked editor sessions flush correctly.
 
 All tasks use the required checklist format with IDs, paths, and user-story labels.

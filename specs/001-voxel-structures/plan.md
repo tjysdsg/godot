@@ -6,7 +6,7 @@
 
 ## Summary
 
-Add bounded, independently transformable voxel structures for buildings, props, and machines. Each structure owns local block data, rebuilds only its own visual and collision representation, and persists as one world object. In the editor, an automatically generated, editor-only GridMap companion provides Godot's native grid authoring UI and synchronizes bidirectionally with the authoritative structure data without user intervention. The design deliberately keeps this data separate from streamed `VoxelLodTerrain` terrain data and its procedural generation.
+Add bounded, independently transformable voxel structures for buildings, props, and machines. Each structure owns chunked local block data, rebuilds only affected chunk representations and their boundary neighbors, and persists as one world object. In the editor, an automatically generated, editor-only GridMap companion provides Godot's native grid authoring UI and synchronizes bidirectionally with the authoritative structure data without user intervention. The design deliberately keeps this data separate from streamed `VoxelLodTerrain` terrain data and its procedural generation.
 
 ## Technical Context
 
@@ -14,7 +14,7 @@ Add bounded, independently transformable voxel structures for buildings, props, 
 
 **Primary Dependencies**: Godot scene, `GridMap`, `MeshLibrary`, editor-plugin, resource, mesh, collision, and file APIs; locally built Zylann Voxel Tools module; existing `VoxelBlockyLibrary` and `VoxelMesherBlocky` resources
 
-**Storage**: Versioned project-owned structure save files under `user://`; each record contains metadata and the raw type-channel payload for one structure
+**Storage**: Versioned project-owned structure save files under `user://`; each record contains metadata plus the non-empty chunk coordinates, extents, and type-channel payloads for one structure
 
 **Testing**: Godot headless project load for syntax/integration checks; focused GDScript tests or a dedicated validation scene for edit, mesh/collision, and save/load round trips
 
@@ -22,11 +22,13 @@ Add bounded, independently transformable voxel structures for buildings, props, 
 
 **Project Type**: Godot game project within the `ProjectV/` submodule
 
-**Performance Goals**: Interactive single-voxel edits must only rebuild the edited structure; a 16×16×16 structure must complete an edit-to-visible update within one rendered frame under normal prototype load
+**Performance Goals**: Interactive single-voxel edits must rebuild only the edited chunk and any face-neighbor chunks affected at a boundary; a 16×16×16 chunk must complete an edit-to-visible update within one rendered frame under normal prototype load
 
-**Constraints**: Structures are bounded, use blocky type IDs from `MinecraftVoxelLibrary.tres`, retain a one-voxel air padding for standalone meshing, and must not alter terrain data. Version one favors one local data buffer per structure and supports up to four local sections before chunking becomes a future extension.
+**Constraints**: Structures are bounded, use blocky type IDs from `MinecraftVoxelLibrary.tres`, retain a one-voxel air padding around each meshing chunk, and must not alter terrain data. A structure is partitioned into fixed-size internal chunks while retaining one public local coordinate space, rigid body, and save record. The new chunked format does not need to read the current flat payload.
 
-**Scale/Scope**: Single-player first; at least 20 independently saved structures, each containing up to 100 edited blocks in the acceptance set. The editor tooling covers local voxel placement, replacement, and removal for a selected structure. Connectivity splitting, dynamic fragment physics, seamless terrain fusion, and multiplayer replication are out of scope.
+**Chunk representation**: Each non-empty chunk receives a generated mesh and collision representation beneath the structure rigid body. Meshing samples neighbor chunks through its padding so shared faces are culled. Collision uses merged solid boxes that cover the blocky occupied volume; this avoids a concave moving-body collider and avoids one physics shape per voxel.
+
+**Scale/Scope**: Single-player first; at least 20 independently saved structures, including one spanning at least four chunks. The editor tooling covers local voxel placement, replacement, and removal for a selected structure. Connectivity splitting, dynamic fragment physics, seamless terrain fusion, and multiplayer replication are out of scope.
 
 **Editor UX model**: Use Godot's native `GridMap` editor as an invisible implementation detail of each selected structure. A `@tool` synchronization component creates a non-runtime companion GridMap and generated MeshLibrary from `VoxelStructure` data; selecting that companion begins an editing session and gives the designer Godot's palette, snapping, selection, movement, undo/redo, and viewport navigation directly. The companion is populated when the session begins and its complete layout is committed back to `VoxelStructure` once when the session ends. There is no Apply, Bake, import, export, custom paint mode, or runtime GridMap rendering.
 
@@ -71,7 +73,7 @@ ProjectV/
 └── VoxelMesherBlocky.tres               # Existing blocky mesher and library binding
 ```
 
-**Structure Decision**: Add a focused `ProjectV` structure subsystem rather than extending `VoxelLodTerrain`. It consumes the existing block library and mesher, while owning local data, rendering, collision, persistence, and a generated GridMap authoring mirror independently.
+**Structure Decision**: Add a focused `ProjectV` structure subsystem rather than extending `VoxelLodTerrain`. It consumes the existing block library and mesher, while owning a sparse set of local chunks, rendering, collision, persistence, and a generated GridMap authoring mirror independently. Chunk coordinates and meshing padding remain internal details.
 
 ## Complexity Tracking
 
@@ -87,8 +89,10 @@ The current custom viewport-edit implementation is not retained. Before adding t
 
 1. On GridMap companion selection, finish any prior session, then populate its cells from authoritative voxel data and mark the session active.
 2. Allow GridMap to own all editing and undo/redo during the active session; do not synchronize or remesh on individual cell edits.
-3. On companion deselection, selection of another structure, scene save, plugin disable, or editor shutdown, read the complete GridMap layout once, replace the authoritative layout in one operation, and rebuild mesh/collision only if it changed.
+3. On companion deselection, selection of another structure, scene save, plugin disable, or editor shutdown, read the complete GridMap layout once, replace the authoritative layout in one operation, and rebuild only the changed chunk representations and their affected boundary neighbors.
 4. Structure-side edits invalidate the companion cache and are reflected the next time that companion is selected.
 5. Never run the companion or synchronization in a game; it is removed/disabled before runtime serialization and excluded from save records.
 
 GridMap exposes cell reads and writes but no public per-cell mutation signal. Session-boundary synchronization avoids needing one while preserving built-in GridMap undo/redo.
+
+When a completed GridMap layout differs from its baseline, the synchronizer identifies changed chunks and refreshes those chunks plus only boundary neighbors whose visible faces can change.

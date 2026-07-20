@@ -62,6 +62,18 @@ Expected results:
 - The machine restores its block layout and its machine state.
 - The ordinary building restores without requiring machine-specific fields.
 
+## Validation scenario 5: Multi-chunk structure
+
+1. Create a structure whose dimensions span at least four chunks.
+2. Place blocks immediately on both sides of a chunk boundary, then edit one boundary block and one block well inside a chunk.
+3. Save the structure, start a fresh session, and load it again.
+
+Expected results:
+
+- No internal mesh face appears between solid blocks across a chunk boundary, and collision covers the same occupied blocky volume.
+- Boundary edits refresh only the changed chunk and affected neighbors; interior edits do not refresh unrelated chunks.
+- The structure restores as one rigid object and one save record with no missing or duplicated blocks.
+
 ## Headless smoke check
 
 After implementation, run the project editor headlessly from the repository root:

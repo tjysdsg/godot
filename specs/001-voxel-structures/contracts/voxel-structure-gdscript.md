@@ -8,7 +8,7 @@ This contract defines the project-facing behavior of the local voxel structure s
 
 `initialize(structure_id, dimensions, transform, initial_data)`
 
-- Creates bounded local voxel data with all unspecified positions set to air.
+- Creates bounded chunked local voxel data with all unspecified positions and unallocated chunks set to air.
 - Applies the supplied transform without modifying terrain.
 - Produces a renderable and collidable representation, including an empty representation when no solid blocks exist.
 - Fails safely if dimensions or initial data are invalid.
@@ -24,11 +24,16 @@ This contract defines the project-facing behavior of the local voxel structure s
 
 - Replaces the block at a valid local position, including block ID 0 to remove it.
 - Rejects invalid positions or unavailable block IDs without mutating state.
-- On acceptance, marks the structure dirty and schedules exactly the affected structure's visual/collision refresh.
+- On acceptance, marks the structure dirty and refreshes the affected chunk plus any face-neighbor chunk representations whose boundary can change.
 
 `is_in_bounds(local_position) -> bool`
 
 - Returns whether a public local coordinate can be edited.
+
+`get_chunk_coordinate(local_position) -> chunk_coordinate`
+
+- Internal helper that maps a valid public coordinate to its owning chunk.
+- Public gameplay and editor callers do not need to use chunk coordinates.
 
 ## Godot GridMap companion plugin
 
@@ -54,11 +59,11 @@ This contract defines the project-facing behavior of the local voxel structure s
 
 `to_save_record() -> StructureSaveRecord`
 
-- Produces a complete, self-contained record of identity, dimensions, a `saved_global_transform` snapshot of the inherited `Node3D.global_transform`, block layout, and additional state.
+- Produces a complete, self-contained record of identity, dimensions, a `saved_global_transform` snapshot of the inherited `Node3D.global_transform`, non-empty chunk layouts, and additional state.
 
 `load_from_save_record(record) -> accepted`
 
-- Validates schema and payload before replacing existing local data.
+- Validates schema, chunk coordinates, extents, and payloads before replacing existing local data. The current flat payload format is not required to load.
 - On success, restores `saved_global_transform` onto the structure, rebuilds the local representation, and leaves terrain untouched.
 - On failure, leaves the current structure state unchanged and returns a usable error result.
 

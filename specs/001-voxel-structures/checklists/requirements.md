@@ -31,4 +31,4 @@
 
 ## Notes
 
-- Validation completed on 2026-07-19. The specification uses the agreed default that structures remain independent of terrain and are bounded, locally addressed objects.
+- Revalidated on 2026-07-19 after making multi-chunk support explicit. The specification uses the agreed default that structures remain independent of terrain, are bounded and locally addressed, and may be internally partitioned into chunks while remaining one logical object.

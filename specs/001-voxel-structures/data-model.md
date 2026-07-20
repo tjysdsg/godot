@@ -7,9 +7,9 @@ The runtime scene object representing one bounded building, prop, or other local
 | Field | Description | Validation |
 |---|---|---|
 | `structure_id` | Stable unique world identifier. | Required; unique within a loaded world. |
-| `dimensions` | Public editable dimensions in local voxel coordinates. | Every axis is positive; version-one size remains within configured local-section limits. |
+| `dimensions` | Public editable dimensions in local voxel coordinates. | Every axis is positive and may span multiple chunks. |
+| `chunks_by_coordinate` | Internal map of non-empty local chunks. | Keys intersect dimensions; missing chunks represent air. |
 | `global_transform` | Runtime world placement and orientation inherited from `Node3D`. | Finite transform; placement policy is applied before insertion. It is not separately stored by the structure model. |
-| `type_data` | Type value for every public voxel position. | Each value resolves to a supported block definition; 0 means air. |
 | `dirty` | Indicates edits not yet captured in a completed save. | Cleared only after the current record is written successfully. |
 | `additional_state` | Optional serializable state supplied by a specialized structure. | Must be serializable and version-compatible. |
 
@@ -36,10 +36,20 @@ The versioned persisted representation of one structure.
 | `structure_id` | Identifier of the represented structure. | Required and non-empty. |
 | `dimensions` | Public editable dimensions. | Matches payload dimensions. |
 | `saved_global_transform` | Snapshot of the structure's `Node3D.global_transform` at save time. | Finite values; restored onto the newly instantiated structure before it is registered. |
-| `block_type_payload` | Serialized local type-channel data. | Exact expected byte length for dimensions and configured type depth. |
+| `chunks` | Serialized non-empty chunk records. | No duplicate coordinates; each payload matches its valid chunk extent and type depth. |
 | `additional_state` | Optional machine/specialization state. | Serializable; unknown optional fields are ignored safely where possible. |
 
-The padding cells used for meshing are runtime-only and are not part of the saved public layout.
+The padding cells used for meshing are runtime-only and are not part of the saved public layout. This format does not need to accept the current flat payload.
+
+## StructureChunk
+
+The internal spatial partition of one large voxel structure; it is not a terrain chunk or a separate world object.
+
+| Field | Description | Validation |
+|---|---|---|
+| `chunk_coordinate` | Integer coordinate within the structure's local chunk space. | Non-negative and intersects dimensions. |
+| `valid_extent` | Valid local cells covered by the chunk. | Each axis is positive and does not exceed the configured chunk edge length. |
+| `type_payload` | Type values for the valid extent. | Exact valid-extent volume; 0 means air. |
 
 ## VoxelMachine
 

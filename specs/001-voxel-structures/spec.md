@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create a separate voxel structure class for small, persistent objects such as buildings and machines, without relying on procedural terrain generation."
+**Input**: User description: "Create a separate voxel structure class for persistent objects such as buildings and machines, without relying on procedural terrain generation. Structures must also be able to grow beyond one chunk so that large objects remain one logical structure."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -74,7 +74,7 @@ As a player, I can use a voxel machine whose functional state remains attached t
 
 ### Edge Cases
 
-- A structure occupies more than one local mesh or data section; its layout must remain contiguous and save as one logical object.
+- A structure spans one or more chunk boundaries; its layout, surface, and physical boundary must remain contiguous, with no gaps, duplicate blocks, or boundary-specific edit failures.
 - A save is requested while edits are pending; the saved result must include every edit accepted before save completion.
 - A saved block refers to an unavailable block definition; loading must preserve the structure record and handle the affected position without corrupting other blocks.
 - Two structures overlap in world space; the system must apply the project's placement policy consistently and must not silently merge their data.
@@ -100,11 +100,17 @@ As a player, I can use a voxel machine whose functional state remains attached t
 - **FR-014**: GridMap edits, including built-in undo/redo, MUST synchronize back to the authoritative voxel structure automatically once when GridMap editing ends, without an Apply, Bake, import, export, or other manual action. Selection changes, scene saves, and plugin shutdown MUST safely finish an active editing session first.
 - **FR-015**: Structure edits performed outside GridMap editing MUST update the companion before its next editing session.
 - **FR-016**: The companion GridMap and generated MeshLibrary MUST be editor-only; they MUST be excluded or disabled in a running game and MUST not render, collide, navigate, save as runtime world data, or modify terrain.
+- **FR-017**: A structure at local origin MUST occupy the positive public volume from `Vector3.ZERO` to `Vector3(dimensions)`; public cell `(0, 0, 0)` MUST align with the first unit cell adjacent to that origin in both runtime and GridMap authoring views.
+- **FR-018**: Meshing padding MUST remain an internal neighbor-lookup detail. Because `VoxelMesherBlocky` removes its required one-cell padding while emitting mesh coordinates, runtime mesh/collision, generated GridMap palette meshes, and the editor bounds frame MUST NOT apply an additional padding translation.
+- **FR-019**: The system MUST support a voxel structure spanning multiple chunks while retaining one structure identity, transform, and contiguous local coordinate space.
+- **FR-020**: The system MUST provide the same read, edit, rendered, collision, and save-and-restore behavior for voxels on either side of a chunk boundary as for voxels within a chunk.
+- **FR-021**: The system MUST retain a structure as one logical saved object regardless of how many chunks it occupies; chunk boundaries MUST NOT be exposed as separately placeable, saveable, or terrain-owned objects.
 
 ### Key Entities
 
 - **Voxel Structure**: A bounded, independently positioned collection of block positions and block values representing a building, prop, or other small world object.
 - **Structure Voxel Data**: The local block layout owned by one voxel structure, including empty positions and references to supported block types.
+- **Structure Chunk**: An internal spatial partition of a large voxel structure's data and representation. Chunks are an implementation detail and do not change the structure's identity or public local coordinates.
 - **Structure Save Record**: The persisted representation of one structure's identity, placement, dimensions, voxel data, and optional additional state.
 - **Voxel Machine**: A specialized voxel structure that adds functional state, such as ownership, inventory, configuration, or operating status.
 - **Structure Registry**: The world-level collection that identifies and restores multiple independent structures.
@@ -115,7 +121,8 @@ As a player, I can use a voxel machine whose functional state remains attached t
 
 - **SC-001**: A user can create an empty structure, place and remove at least 100 blocks, and see each accepted edit reflected before performing the next deliberate edit.
 - **SC-002**: After a completed save and reload, 100% of blocks, dimensions, and world transforms in a test set of 20 structures match their saved values.
-- **SC-003**: A test structure spanning up to four local data sections restores as one contiguous object with no missing or duplicated blocks.
+- **SC-003**: A test structure spanning at least four chunks restores as one contiguous object with no missing or duplicated blocks.
+- **SC-008**: A user can place, read, replace, and remove blocks immediately on both sides of each boundary in a test structure spanning at least four chunks, with all resulting changes visible and physically represented as one object.
 - **SC-004**: Saving or editing a structure does not alter any terrain block in an otherwise unchanged test world.
 - **SC-005**: A machine structure restores both its voxel layout and all declared machine state in 100% of save-and-load test runs.
 - **SC-006**: A level designer can complete a place, replace, and remove operation on a selected structure from the editor without writing or running a custom gameplay script.
@@ -123,10 +130,11 @@ As a player, I can use a voxel machine whose functional state remains attached t
 
 ## Assumptions
 
-- Version one targets bounded buildings, props, and machines that ordinarily fit in one local data section and may span a small number of adjacent sections.
+- Structures remain bounded but are not restricted to one chunk. “Chunked voxel structure” is the adopted term for a single logical structure whose internal data and representation are partitioned across multiple chunks; the chunking strategy and size will be decided during planning.
 - Terrain remains responsible for large-scale ground, caves, and streaming-world edits; merging structure data into terrain data is out of scope.
 - Existing block type definitions remain the source of valid block values used by structures.
 - Structure placement, overlap policy, and authorization rules will follow the existing game's world and multiplayer rules when those systems are introduced.
 - Version one does not require seamless mesh fusion between a structure and adjacent terrain or another structure.
 - Editor tooling targets the Godot editor and is separate from gameplay input; it uses the same public structure edit contract.
 - The GridMap companion is a generated editor representation, never an additional source of persistent runtime truth; `VoxelStructure` remains authoritative.
+- GridMap editing may be finished with the explicit toolbar action or a selection change; the completed layout is then committed once to the authoritative structure.

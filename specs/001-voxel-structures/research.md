@@ -1,13 +1,14 @@
 # Research: Persistent Voxel Structures
 
-## Decision: Use one local `VoxelBuffer` as the authoritative block layout for each structure
+## Decision: Use a sparse collection of local chunks as the authoritative block layout for each structure
 
-**Rationale**: `VoxelBuffer` is a bounded dense voxel grid, exposes direct local reads and writes, and provides a `VoxelTool` for local edit operations. It avoids terrain streaming, viewer loading, LOD, and generator fallback behavior. For the intended small buildings and machines, dense local data is straightforward and predictably bounded.
+**Rationale**: Chunked local storage keeps structures independent of terrain streaming while allowing a large bounded object to update locally. Each chunk owns a bounded voxel buffer, and the structure maps public local coordinates to those chunks. Missing chunks read as air, so empty regions need not allocate data. An edit rebuilds its own chunk and only neighbors whose shared faces can change.
 
 **Alternatives considered**:
 
 - `VoxelTerrain` or `VoxelLodTerrain`: appropriate for large streamed terrain, but their data loading and generator fallback behavior introduce unnecessary complexity for local objects.
-- A custom sparse dictionary of block positions: potentially smaller for nearly empty objects, but requires custom meshing input construction and complicates routine edits. Revisit only if profiling shows dense local buffers are unsuitable.
+- A single structure-wide dense buffer: straightforward for small props, but requires whole-object rebuilding and does not scale local edits for large structures.
+- A custom sparse dictionary of block positions: potentially smaller for nearly empty objects, but requires custom meshing input construction and complicates routine edits.
 
 ## Decision: Reuse `VoxelMesherBlocky` and the existing block library for visual meshes
 
@@ -18,25 +19,25 @@
 - Construct cube meshes manually: duplicates library/material logic and loses face culling.
 - Add structure voxels directly to terrain: prevents independent transforms and violates the required data boundary.
 
-## Decision: Store a one-voxel air border around the authored local bounds for meshing
+## Decision: Store a one-voxel air border around each meshing chunk
 
-**Rationale**: Voxel Tools meshers treat outer buffer cells as neighbors. Their API documentation requires standalone voxel meshes to be padded by air so exterior faces are emitted correctly. Public structure coordinates therefore map into an interior region, while the buffer includes the border.
+**Rationale**: Voxel Tools meshers treat outer buffer cells as neighbors. Each chunk mesh receives a padded buffer whose border samples adjacent chunks, so exterior faces are emitted correctly while faces between adjacent solid chunks remain culled. Public structure coordinates never expose padding.
 
 **Alternatives considered**:
 
 - No padding: exterior faces may be missing or incorrectly culled.
 - Expose padded coordinates to callers: leaks renderer-specific details into gameplay and save data.
 
-## Decision: Serialize the type channel in a project-owned, versioned structure record
+## Decision: Serialize non-empty chunks in a project-owned, versioned structure record
 
-**Rationale**: `VoxelBuffer` exposes the uncompressed `CHANNEL_TYPE` as a byte array and can restore it from the same representation. Storing dimensions, transform, type payload, record version, and optional machine state creates a stable bounded save unit without depending on a terrain stream or a generator. A project-owned schema also permits future migrations when block IDs or object state evolve.
+**Rationale**: Storing dimensions, transform, chunk coordinates, chunk extents, type payloads, record version, and optional machine state preserves one bounded save unit without depending on terrain streaming or a generator. The new format deliberately does not need to load the current flat type payload.
 
 **Alternatives considered**:
 
 - `VoxelStreamSQLite`: designed for terrain block streaming and asynchronous terrain saves. It is unnecessary for a small object owned by one scene.
 - Save every occupied voxel as a list: easier to inspect, but larger and slower for ordinary solid buildings. It remains a future option for very sparse structure types.
 
-## Decision: Rebuild mesh and static collision after accepted edits; defer dynamic fragments
+## Decision: Rebuild affected chunk mesh and compound collision after accepted edits; defer dynamic fragments
 
 **Rationale**: The initial feature requires visually and physically accurate local edits. Rebuilding one small object is bounded and isolates update cost. The project’s technical direction reserves connectivity analysis, detached fragments, and dynamic physics proxies for a later destruction vertical slice.
 
